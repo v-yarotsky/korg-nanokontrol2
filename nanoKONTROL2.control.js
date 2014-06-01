@@ -363,12 +363,12 @@ devicePage.rButton = function(index)
 
 devicePage.prevTrackButton = function()
 {
-	isSetPressed ? primaryDevice.selectPrevious() : cursorTrack.selectPrevious();
+	isSetPressed ? primaryDevice.switchToDevice(DeviceType.ANY,ChainLocation.PREVIOUS) : cursorTrack.selectPrevious();
 };
 
 devicePage.nextTrackButton = function()
 {
-	isSetPressed ? primaryDevice.selectNext() : cursorTrack.selectNext();
+	isSetPressed ? primaryDevice.switchToDevice(DeviceType.ANY,ChainLocation.NEXT) : cursorTrack.selectNext();
 };
 
 devicePage.prevMarkerButton = function()
