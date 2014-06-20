@@ -243,7 +243,7 @@ function onMidi(status, data1, data2)
 				case CC.PLAY:
 					if (isEngineOn)
 					{
-						if (!isStopPressed && !isRecPressed) isSetPressed ? transport.returnToArrangerment() : isPlay ? transport.restart() : transport.play();
+						if (!isStopPressed && !isRecPressed) isSetPressed ? transport.returnToArrangement() : isPlay ? transport.restart() : transport.play();
 					}
 					else transport.restart();
 					break;
