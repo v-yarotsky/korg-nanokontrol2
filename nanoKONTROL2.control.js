@@ -1,6 +1,6 @@
 loadAPI(1);
 
-host.defineController("Korg", "nanoKONTROL 2", "1.0", "E74ABCE1-7BA8-4526-A769-25A7E1F8211E");
+host.defineController("Korg", "nanoKONTROL 2 (simple)", "1.0", "094bfc0c-0f0b-439a-8162-5f087089c58b");
 host.defineMidiPorts(1, 1);
 var ECHO_ID = "11";
 host.defineSysexDiscovery("F0 42 50 00" + ECHO_ID + "F7", "F0 42 50 01 ?? " + ECHO_ID + " 13 01 00 00 ?? ?? ?? ?? F7");
@@ -33,16 +33,6 @@ var CC =
 	R8 : 0x47
 };
 
-var mode =
-{
-	MIXER : 0,
-	DEVICE : 1
-};
-var activeMode = mode.MIXER;
-var paramPage = 0;
-var pagenames = [];
-var isMacroMapping = initArray(false, 8);
-
 var pendingLedState = initArray(0, 128);
 var outputLedState = initArray(0, 128);
 
@@ -64,7 +54,6 @@ function init()
 	application = host.createApplicationSection();
 	trackBank = host.createTrackBankSection(8, 1, 0);
 	cursorTrack = host.createCursorTrackSection(2, 0);
-	primaryDevice = cursorTrack.getPrimaryDevice();
 	arranger = host.createArrangerSection(0);
 
 	transport.addIsPlayingObserver(function(on)
@@ -80,29 +69,6 @@ function init()
 	{
       isLooping = on;
 	});
-   primaryDevice.addSelectedPageObserver(0, function(page)
-	{
-		paramPage = page;
-	});
-
-   primaryDevice.addPageNamesObserver(function(names)
-   {
-      pagenames = arguments;
-   });
-
-	for ( var p = 0; p < 8; p++)
-	{
-		var parameter = primaryDevice.getParameter(p);
-
-		parameter.setLabel("P" + (p + 1));
-		// macro.addIsMappingObserver(getObserverIndexFunc(p, isMapping)); //TODO
-
-      var macro = primaryDevice.getMacro(p);
-      macro.getModulationSource().addIsMappingObserver(getTrackObserverFunc(p, function(index, state)
-      {
-         isMacroMapping[index] = state;
-      }));
-	}
 
 	for ( var t = 0; t < 8; t++)
 	{
@@ -151,7 +117,7 @@ function exit()
 
 function flush()
 {
-   activePage.prepareOutput();
+   mixerPage.prepareOutput();
 
    for(var cc = CC.S1; cc <= CC.R8; cc++)
    {
@@ -215,11 +181,11 @@ function onMidi(status, data1, data2)
 
 		if (withinRange(cc, CC.SLIDER1, CC.SLIDER8))
 		{
-			activePage.onSlider(index, val);
+			mixerPage.onSlider(index, val);
 		}
 		else if (withinRange(cc, CC.KNOB1, CC.KNOB8))
 		{
-			activePage.onKnob(index, val);
+			mixerPage.onKnob(index, val);
 		}
 
 		if (val > 0) // ignore when buttons are released
@@ -227,15 +193,15 @@ function onMidi(status, data1, data2)
 
 			if (withinRange(cc, CC.M1, CC.M8))
 			{
-				activePage.mButton(index);
+				mixerPage.mButton(index);
 			}
 			else if (withinRange(cc, CC.S1, CC.S8))
 			{
-				activePage.sButton(index);
+				mixerPage.sButton(index);
 			}
 			else if (withinRange(cc, CC.R1, CC.R8))
 			{
-				activePage.rButton(index);
+				mixerPage.rButton(index);
 			}
 
 			switch (cc)
@@ -257,7 +223,7 @@ function onMidi(status, data1, data2)
 					break;
 
 				case CC.CYCLE:
-					isSetPressed ? transport.toggleLoop() : switchPage();
+					transport.toggleLoop();
 					break;
 
 				case CC.REW:
@@ -269,20 +235,24 @@ function onMidi(status, data1, data2)
 					break;
 
 				case CC.PREV_TRACK:
-					activePage.prevTrackButton();
+					mixerPage.prevTrackButton();
 					break;
 
 				case CC.NEXT_TRACK:
-					activePage.nextTrackButton();
+					mixerPage.nextTrackButton();
 					break;
 
 				case CC.PREV_MARKER:
-					activePage.prevMarkerButton();
+					mixerPage.prevMarkerButton();
 					break;
 
 				case CC.NEXT_MARKER:
-					activePage.nextMarkerButton();
+					mixerPage.nextMarkerButton();
 					break;
+
+        case CC.SET:
+          mixerPage.setMarkerButton();
+          break;
 			}
 		}
 	}
@@ -302,8 +272,6 @@ function allIndicationsOff()
 {
 	for ( var p = 0; p < 8; p++)
 	{
-      primaryDevice.getParameter(p).setIndication(false);
-      primaryDevice.getMacro(p).getAmount().setIndication(false);
 		trackBank.getTrack(p).getVolume().setIndication(false);
 		trackBank.getTrack(p).getPan().setIndication(false);
 	}
@@ -316,7 +284,7 @@ function toggleEngineState()
 
 function initNanoKontrol2()
 {
-	activePage.updateIndications();
+	mixerPage.updateIndications();
 }
 
 function Page()
@@ -328,83 +296,7 @@ Page.prototype.prepareCommonOutput = function()
    setOutput(CC.PLAY, isPlay ? 127 : 0);
    setOutput(CC.STOP, !isPlay ? 127 : 0);
    setOutput(CC.REC, isRecording ? 127 : 0);
-   setOutput(CC.CYCLE, activePage == mixerPage ? 127 : 0);
-};
-
-devicePage = new Page();
-
-devicePage.onKnob = function(index, val)
-{
-   isSetPressed ? primaryDevice.getParameter(index).reset() : primaryDevice.getParameter(index).set(val, 128);
-};
-
-devicePage.onSlider = function(index, val)
-{
-   isSetPressed ? primaryDevice.getMacro(index).getAmount().reset() : primaryDevice.getMacro(index).getAmount().set(val, 128);
-};
-
-devicePage.sButton = function(index)
-{
-   primaryDevice.setParameterPage(index);
-   if (index < pagenames.length)
-   {
-      host.showPopupNotification("Page: " + pagenames[index]);
-   }
-};
-
-devicePage.mButton = function(index)
-{
-   primaryDevice.getMacro(index).getModulationSource().toggleIsMapping();
-};
-
-devicePage.rButton = function(index)
-{
-};
-
-devicePage.prevTrackButton = function()
-{
-	isSetPressed ? primaryDevice.switchToDevice(DeviceType.ANY,ChainLocation.PREVIOUS) : cursorTrack.selectPrevious();
-};
-
-devicePage.nextTrackButton = function()
-{
-	isSetPressed ? primaryDevice.switchToDevice(DeviceType.ANY,ChainLocation.NEXT) : cursorTrack.selectNext();
-};
-
-devicePage.prevMarkerButton = function()
-{
-	isSetPressed ? primaryDevice.switchToPreviousPresetCategory() : primaryDevice.switchToPreviousPreset();
-};
-
-devicePage.nextMarkerButton = function()
-{
-	isSetPressed ? primaryDevice.switchToNextPresetCategory() : primaryDevice.switchToNextPreset();
-};
-
-devicePage.updateIndications = function()
-{
-	for ( var p = 0; p < 8; p++)
-	{
-		macro = primaryDevice.getMacro(p).getAmount();
-		parameter = primaryDevice.getParameter(p);
-		track = trackBank.getTrack(p);
-		parameter.setIndication(true);
-		macro.setIndication(true);
-		track.getVolume().setIndication(false);
-		track.getPan().setIndication(false);
-	}
-};
-
-devicePage.prepareOutput = function()
-{
-   this.prepareCommonOutput();
-
-   for (var i = 0; i < 8; i++)
-   {
-      setOutput(CC.S1 + i, paramPage == i ? 127 : 0);
-      setOutput(CC.M1 + i, (isMacroMapping[i] && blink) ? 127 : 0);
-      setOutput(CC.R1 + i, 0);
-   }
+   setOutput(CC.CYCLE, isLooping ? 127 : 0);
 };
 
 /* mixer page */////////////////////////////////////////////////////////////////
@@ -471,35 +363,16 @@ mixerPage.nextMarkerButton = function()
 //	transport.nextMarker(); // activate when it exists in the API
 };
 
+mixerPage.setMarkerButton = function() {
+
+};
+
 mixerPage.updateIndications = function()
 {
 	for ( var p = 0; p < 8; p++)
 	{
-		macro = primaryDevice.getMacro(p).getAmount();
-		parameter = primaryDevice.getCommonParameter(p);
 		track = trackBank.getTrack(p);
 		track.getVolume().setIndication(true);
 		track.getPan().setIndication(true);
-		parameter.setIndication(false);
-		macro.setIndication(false);
 	}
 };
-
-var activePage = devicePage;
-
-function switchPage()
-{
-	switch (activePage)
-	{
-		case devicePage:
-			activePage = mixerPage;
-         host.showPopupNotification("Mixer Mode");
-			break;
-		case mixerPage:
-			activePage = devicePage;
-         host.showPopupNotification("Device Mode");
-			break;
-	}
-
-	activePage.updateIndications();
-}
